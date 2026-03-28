@@ -1,3 +1,6 @@
+import { supabase } from './supabase';
+import { appConfig } from '../config/appConfig';
+
 type ApiEnvelope<T> = {
   success: boolean;
   message: string;
@@ -5,8 +8,7 @@ type ApiEnvelope<T> = {
   errors?: unknown;
 };
 
-const viteEnv = (import.meta as unknown as { env?: Record<string, string | undefined> }).env;
-const apiBaseUrl = (viteEnv?.VITE_API_BASE_URL || '').replace(/\/+$/, '');
+const apiBaseUrl = (appConfig.apiBaseUrl || '').replace(/\/+$/, '');
 
 const buildRequestUrl = (path: string) => {
   if (/^https?:\/\//i.test(path)) {
@@ -249,10 +251,53 @@ const requestBlob = async (path: string, init: RequestInit = {}, token?: string)
 };
 
 export const apiLogin = async (identifier: string, password: string) => {
-  return request<LoginData>('/api/auth/login', {
-    method: 'POST',
-    body: JSON.stringify({ identifier, password }),
-  });
+  try {
+    return await request<LoginData>('/api/auth/login', {
+      method: 'POST',
+      body: JSON.stringify({ identifier, password }),
+    });
+  } catch (error) {
+    if (!identifier.includes('@')) {
+      throw error;
+    }
+
+    const { data, error: authError } = await supabase.auth.signInWithPassword({
+      email: identifier,
+      password,
+    });
+
+    if (authError) {
+      throw new Error(authError.message || 'Authentication failed');
+    }
+
+    const accessToken = data.session?.access_token;
+    if (!accessToken) {
+      throw new Error('Authentication failed: missing access token');
+    }
+
+    const userId = data.user?.id || '';
+    let fullName: string | null = data.user?.user_metadata?.full_name ?? null;
+
+    if (userId) {
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('full_name')
+        .eq('id', userId)
+        .maybeSingle();
+      fullName = (profile?.full_name as string | null | undefined) ?? fullName;
+    }
+
+    return {
+      token: accessToken,
+      refresh_token: data.session?.refresh_token,
+      expires_at: data.session?.expires_at,
+      user: {
+        id: userId,
+        email: data.user?.email || identifier,
+        full_name: fullName,
+      },
+    };
+  }
 };
 
 export const apiSignup = async (
@@ -342,14 +387,38 @@ export const createCheckoutSession = async (
 };
 
 export const fetchMe = async (token: string) => {
-  return request<{
-    id: string;
-    name: string | null;
-    email: string;
-    role: string;
-    preferredCharityId?: string | null;
-    charityContributionPercent?: number | null;
-  }>('/api/auth/me', {}, token);
+  try {
+    return await request<{
+      id: string;
+      name: string | null;
+      email: string;
+      role: string;
+      preferredCharityId?: string | null;
+      charityContributionPercent?: number | null;
+    }>('/api/auth/me', {}, token);
+  } catch {
+    const { data: authData, error: authError } = await supabase.auth.getUser(token);
+    if (authError || !authData.user) {
+      throw new Error(authError?.message || 'Session expired. Please login again.');
+    }
+
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('full_name, role, preferred_charity_id, charity_contribution_percent')
+      .eq('id', authData.user.id)
+      .maybeSingle();
+
+    return {
+      id: authData.user.id,
+      name: (profile?.full_name as string | null | undefined) || null,
+      email: authData.user.email || '',
+      role: (profile?.role as string | undefined) || 'user',
+      preferredCharityId:
+        (profile?.preferred_charity_id as string | null | undefined) ?? null,
+      charityContributionPercent:
+        (profile?.charity_contribution_percent as number | null | undefined) ?? null,
+    };
+  }
 };
 
 export const fetchScores = async (token: string, params: ListQueryParams = {}) => {
