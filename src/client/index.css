@@ -1,0 +1,63 @@
+@import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,700&family=Manrope:wght@400;500;600;700;800&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --surface: #f8f8f5;
+  --surface-elevated: #ffffff;
+  --ink: #182020;
+  --muted: #5f6b67;
+  --brand: #1f5c45;
+  --brand-strong: #123729;
+  --accent: #d8b26a;
+  --accent-deep: #b18a45;
+  --accent-soft: #f3e6c7;
+  --accent-line: #dec08a;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  min-height: 100%;
+}
+
+body {
+  font-family: 'Manrope', 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  background: var(--surface);
+  color: var(--ink);
+}
+
+.font-display {
+  font-family: 'Fraunces', Georgia, 'Times New Roman', serif;
+}
+
+.noise-bg {
+  background-image: radial-gradient(rgba(0, 0, 0, 0.035) 0.6px, transparent 0.6px);
+  background-size: 8px 8px;
+}
+
+.premium-panel {
+  background: linear-gradient(145deg, #ffffff 0%, #fbf8f1 100%);
+  border: 1px solid rgba(177, 138, 69, 0.28);
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.9) inset,
+    0 12px 28px rgba(17, 24, 39, 0.08);
+}
+
+.premium-chip {
+  background: linear-gradient(120deg, #f7ebd2 0%, #e6c685 100%);
+  color: #3b2d13;
+  border: 1px solid rgba(177, 138, 69, 0.45);
+}
+
+.premium-outline {
+  border: 1px solid rgba(222, 192, 138, 0.6);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.45) inset;
+}
