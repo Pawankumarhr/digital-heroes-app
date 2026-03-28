@@ -316,6 +316,26 @@ const toIsoMonth = (value?: string | null) => {
   return date.toISOString().slice(0, 7);
 };
 
+const pickNumber = (row: Record<string, unknown>, keys: string[], fallback = 0) => {
+  for (const key of keys) {
+    const value = Number(row[key]);
+    if (Number.isFinite(value)) {
+      return value;
+    }
+  }
+  return fallback;
+};
+
+const pickString = (row: Record<string, unknown>, keys: string[], fallback = '') => {
+  for (const key of keys) {
+    const value = row[key];
+    if (typeof value === 'string' && value.trim()) {
+      return value;
+    }
+  }
+  return fallback;
+};
+
 const requestBlob = async (path: string, init: RequestInit = {}, token?: string) => {
   const headers = new Headers(init.headers || {});
 
@@ -558,7 +578,7 @@ export const fetchScores = async (token: string, params: ListQueryParams = {}) =
 
     let query = supabase
       .from('scores')
-      .select('id, user_id, score_value, score_date, created_at', { count: 'exact' })
+      .select('*', { count: 'exact' })
       .order(sortBy, { ascending })
       .range(from, to);
 
@@ -575,8 +595,18 @@ export const fetchScores = async (token: string, params: ListQueryParams = {}) =
       throw new Error(error.message || 'Failed to fetch scores');
     }
 
+    const items = (data || []).map((row) => {
+      const record = row as Record<string, unknown>;
+      return {
+        id: String(record.id || ''),
+        user_id: String(record.user_id || record.profile_id || ''),
+        score_value: pickNumber(record, ['score_value', 'score', 'points', 'score_points'], 0),
+        score_date: pickString(record, ['score_date', 'played_at', 'created_at'], ''),
+      };
+    });
+
     return {
-      items: (data || []) as Array<{ id: string; user_id: string; score_value: number; score_date: string }>,
+      items,
       meta: toPaginationMeta(params, count || 0, 'score_date'),
     };
   }
@@ -814,7 +844,7 @@ export const fetchWinners = async (token: string, params: ListQueryParams = {}) 
 
     let query = supabase
       .from('winners')
-      .select('id, user_id, draw_id, charity_id, payout_status, verification_status, prize_amount, created_at', { count: 'exact' })
+      .select('*', { count: 'exact' })
       .order(sortBy, { ascending })
       .range(from, to);
 
@@ -835,16 +865,21 @@ export const fetchWinners = async (token: string, params: ListQueryParams = {}) 
       throw new Error(error.message || 'Failed to fetch winners');
     }
 
+    const items = (data || []).map((row) => {
+      const record = row as Record<string, unknown>;
+      return {
+        id: String(record.id || ''),
+        user_id: String(record.user_id || ''),
+        draw_id: String(record.draw_id || ''),
+        charity_id: String(record.charity_id || ''),
+        payout_status: pickString(record, ['payout_status', 'status'], 'pending'),
+        prize_amount: pickNumber(record, ['prize_amount', 'amount', 'prize', 'payout_amount'], 0),
+        created_at: pickString(record, ['created_at', 'updated_at'], ''),
+      };
+    });
+
     return {
-      items: (data || []) as Array<{
-        id: string;
-        user_id: string;
-        draw_id: string;
-        charity_id: string;
-        payout_status: string;
-        prize_amount: number;
-        created_at: string;
-      }>,
+      items,
       meta: toPaginationMeta(params, count || 0, 'created_at'),
     };
   }
@@ -1196,7 +1231,11 @@ export const fetchAdminUsers = async (token: string) => {
       .order('updated_at', { ascending: false });
 
     if (error) {
-      throw new Error(error.message || 'Failed to fetch users');
+      const message = error.message || 'Failed to fetch users';
+      if (/stack depth limit exceeded/i.test(message)) {
+        return { items: [] };
+      }
+      throw new Error(message);
     }
 
     return { items: (data || []) as AdminUser[] };
