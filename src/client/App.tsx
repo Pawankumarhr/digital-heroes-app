@@ -44,6 +44,7 @@ import {
   updateScore,
   updateWinner,
 } from './lib/api.ts';
+import { appConfig } from './config/appConfig';
 
 type JsonRecord = Record<string, unknown>;
 
@@ -193,6 +194,8 @@ type ModuleKey = 'scores' | 'draws' | 'charities' | 'winners';
 type PublicPage = '/' | '/about' | '/contact';
 type DrawStatus = 'draft' | 'simulated' | 'published' | 'closed';
 type WinnerPayoutStatus = 'pending' | 'paid' | 'failed';
+
+const isFrontendOnlyMode = !appConfig.apiBaseUrl;
 
 type EditableState = {
   module: ModuleKey;
@@ -1805,6 +1808,12 @@ function AdminApp() {
   };
 
   const loadProtectedData = async (authToken: string) => {
+    if (isFrontendOnlyMode) {
+      setLoadingData(false);
+      setDataError('Frontend-only mode: backend admin APIs are disabled. Set appConfig.apiBaseUrl to enable full admin data.');
+      return;
+    }
+
     setLoadingData(true);
     setDataError('');
 
@@ -1882,11 +1891,20 @@ function AdminApp() {
     if (!token || !isAdmin) {
       return;
     }
+    if (isFrontendOnlyMode) {
+      setLoadingData(false);
+      setDataError('Frontend-only mode: backend admin APIs are disabled. Set appConfig.apiBaseUrl to enable full admin data.');
+      return;
+    }
     void loadProtectedData(token);
   }, [token, isAdmin]);
 
   useEffect(() => {
     if (!token || !isAdmin) {
+      return;
+    }
+
+    if (isFrontendOnlyMode) {
       return;
     }
 

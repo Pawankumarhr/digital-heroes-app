@@ -9,6 +9,7 @@ type ApiEnvelope<T> = {
 };
 
 const apiBaseUrl = (appConfig.apiBaseUrl || '').replace(/\/+$/, '');
+const isBackendConfigured = Boolean(apiBaseUrl);
 
 const buildRequestUrl = (path: string) => {
   if (/^https?:\/\//i.test(path)) {
@@ -267,14 +268,9 @@ const requestBlob = async (path: string, init: RequestInit = {}, token?: string)
 };
 
 export const apiLogin = async (identifier: string, password: string) => {
-  try {
-    return await request<LoginData>('/api/auth/login', {
-      method: 'POST',
-      body: JSON.stringify({ identifier, password }),
-    });
-  } catch (error) {
+  const loginWithSupabase = async () => {
     if (!identifier.includes('@')) {
-      throw error;
+      throw new Error('Email is required for frontend-only login');
     }
 
     const { data, error: authError } = await supabase.auth.signInWithPassword({
@@ -313,6 +309,22 @@ export const apiLogin = async (identifier: string, password: string) => {
         full_name: fullName,
       },
     };
+  };
+
+  if (!isBackendConfigured) {
+    return loginWithSupabase();
+  }
+
+  try {
+    return await request<LoginData>('/api/auth/login', {
+      method: 'POST',
+      body: JSON.stringify({ identifier, password }),
+    });
+  } catch (error) {
+    if (!identifier.includes('@')) {
+      throw error;
+    }
+    return loginWithSupabase();
   }
 };
 
@@ -403,16 +415,7 @@ export const createCheckoutSession = async (
 };
 
 export const fetchMe = async (token: string) => {
-  try {
-    return await request<{
-      id: string;
-      name: string | null;
-      email: string;
-      role: string;
-      preferredCharityId?: string | null;
-      charityContributionPercent?: number | null;
-    }>('/api/auth/me', {}, token);
-  } catch {
+  const fetchMeFromSupabase = async () => {
     const { data: authData, error: authError } = await supabase.auth.getUser(token);
     if (authError || !authData.user) {
       throw new Error(authError?.message || 'Session expired. Please login again.');
@@ -434,6 +437,23 @@ export const fetchMe = async (token: string) => {
       charityContributionPercent:
         (profile?.charity_contribution_percent as number | null | undefined) ?? null,
     };
+  };
+
+  if (!isBackendConfigured) {
+    return fetchMeFromSupabase();
+  }
+
+  try {
+    return await request<{
+      id: string;
+      name: string | null;
+      email: string;
+      role: string;
+      preferredCharityId?: string | null;
+      charityContributionPercent?: number | null;
+    }>('/api/auth/me', {}, token);
+  } catch {
+    return fetchMeFromSupabase();
   }
 };
 
