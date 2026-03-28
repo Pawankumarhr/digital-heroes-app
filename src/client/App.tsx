@@ -225,10 +225,11 @@ const navItems: Array<{ key: ViewKey; label: string }> = [
   { key: 'reports', label: 'Reports' },
 ];
 
-const publicLinks: Array<{ href: PublicPage; label: string }> = [
+const publicLinks: Array<{ href: PublicPage | '/admin'; label: string }> = [
   { href: '/', label: 'Home' },
   { href: '/about', label: 'About' },
   { href: '/contact', label: 'Contact' },
+  { href: '/admin', label: 'Admin' },
 ];
 
 const defaultDrafts: Record<ModuleKey, string> = {
