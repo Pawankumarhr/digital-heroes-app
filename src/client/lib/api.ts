@@ -199,10 +199,18 @@ const request = async <T>(path: string, init: RequestInit = {}, token?: string):
     headers.set('Authorization', `Bearer ${token}`);
   }
 
-  const response = await fetch(buildRequestUrl(path), {
-    ...init,
-    headers,
-  });
+  let response: Response;
+  try {
+    response = await fetch(buildRequestUrl(path), {
+      ...init,
+      headers,
+    });
+  } catch {
+    const backendHint = apiBaseUrl
+      ? `Unable to reach API at ${apiBaseUrl}`
+      : 'Unable to reach API. Set appConfig.apiBaseUrl to your deployed backend URL';
+    throw new Error(`${backendHint} (network request failed)`);
+  }
 
   if (!response.ok) {
     throw new Error(await parseError(response));
@@ -238,10 +246,18 @@ const requestBlob = async (path: string, init: RequestInit = {}, token?: string)
     headers.set('Authorization', `Bearer ${token}`);
   }
 
-  const response = await fetch(buildRequestUrl(path), {
-    ...init,
-    headers,
-  });
+  let response: Response;
+  try {
+    response = await fetch(buildRequestUrl(path), {
+      ...init,
+      headers,
+    });
+  } catch {
+    const backendHint = apiBaseUrl
+      ? `Unable to reach API at ${apiBaseUrl}`
+      : 'Unable to reach API. Set appConfig.apiBaseUrl to your deployed backend URL';
+    throw new Error(`${backendHint} (network request failed)`);
+  }
 
   if (!response.ok) {
     throw new Error(await parseError(response));
