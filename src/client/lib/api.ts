@@ -189,6 +189,28 @@ const parseError = async (response: Response) => {
   }
 };
 
+const parseJsonPayload = async <T>(response: Response, requestPath: string): Promise<ApiEnvelope<T>> => {
+  const contentType = response.headers.get('content-type') || '';
+  const text = await response.text();
+
+  if (!contentType.toLowerCase().includes('application/json')) {
+    if (/<!doctype\s+html|<html/i.test(text)) {
+      throw new Error(
+        `API endpoint ${requestPath} returned HTML instead of JSON. ` +
+          'This usually means frontend-only deployment without backend API.'
+      );
+    }
+
+    throw new Error(`API endpoint ${requestPath} returned non-JSON response`);
+  }
+
+  try {
+    return JSON.parse(text) as ApiEnvelope<T>;
+  } catch {
+    throw new Error(`Invalid JSON response from ${requestPath}`);
+  }
+};
+
 const request = async <T>(path: string, init: RequestInit = {}, token?: string): Promise<T> => {
   const headers = new Headers(init.headers || {});
 
@@ -217,7 +239,7 @@ const request = async <T>(path: string, init: RequestInit = {}, token?: string):
     throw new Error(await parseError(response));
   }
 
-  const payload = (await response.json()) as ApiEnvelope<T>;
+  const payload = await parseJsonPayload<T>(response, path);
 
   if (!payload.success) {
     throw new Error(payload.message || 'Request failed');
