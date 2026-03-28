@@ -430,6 +430,57 @@ export const apiSignup = async (
   password: string,
   inviteKey: string
 ) => {
+  if (!isBackendConfigured) {
+    if (!identifier.includes('@')) {
+      throw new Error('Email is required for signup in frontend-only mode');
+    }
+
+    const { data: authData, error: authError } = await supabase.auth.signUp({
+      email: identifier,
+      password,
+      options: {
+        data: {
+          full_name: name,
+          invite_key: inviteKey,
+        },
+      },
+    });
+
+    if (authError) {
+      throw new Error(authError.message || 'Signup failed');
+    }
+
+    const userId = authData.user?.id;
+    if (userId) {
+      // Best effort profile upsert. If RLS blocks this write, signup still succeeds.
+      await supabase.from('profiles').upsert(
+        {
+          id: userId,
+          email: identifier,
+          full_name: name,
+        },
+        { onConflict: 'id' }
+      );
+    }
+
+    return {
+      user: authData.user
+        ? {
+            id: authData.user.id,
+            email: authData.user.email || identifier,
+            full_name: (authData.user.user_metadata?.full_name as string | undefined) || name,
+          }
+        : null,
+      session: authData.session
+        ? {
+            access_token: authData.session.access_token,
+            refresh_token: authData.session.refresh_token,
+            expires_at: authData.session.expires_at,
+          }
+        : null,
+    };
+  }
+
   const payload = identifier.includes('@')
     ? { name, email: identifier, password, inviteKey }
     : { name, phone: identifier, password, inviteKey };
@@ -447,6 +498,58 @@ export const apiUserSignup = async (
   preferredCharityId?: string,
   charityContributionPercent?: number
 ) => {
+  if (!isBackendConfigured) {
+    if (!identifier.includes('@')) {
+      throw new Error('Email is required for signup in frontend-only mode');
+    }
+
+    const { data: authData, error: authError } = await supabase.auth.signUp({
+      email: identifier,
+      password,
+      options: {
+        data: {
+          full_name: name,
+        },
+      },
+    });
+
+    if (authError) {
+      throw new Error(authError.message || 'Signup failed');
+    }
+
+    const userId = authData.user?.id;
+    if (userId) {
+      // Best effort profile upsert; frontend-only mode depends on table policies.
+      await supabase.from('profiles').upsert(
+        {
+          id: userId,
+          email: identifier,
+          full_name: name,
+          preferred_charity_id: preferredCharityId || null,
+          charity_contribution_percent: charityContributionPercent ?? null,
+        },
+        { onConflict: 'id' }
+      );
+    }
+
+    return {
+      user: authData.user
+        ? {
+            id: authData.user.id,
+            email: authData.user.email || identifier,
+            full_name: (authData.user.user_metadata?.full_name as string | undefined) || name,
+          }
+        : null,
+      session: authData.session
+        ? {
+            access_token: authData.session.access_token,
+            refresh_token: authData.session.refresh_token,
+            expires_at: authData.session.expires_at,
+          }
+        : null,
+    };
+  }
+
   const payload = identifier.includes('@')
     ? { name, email: identifier, password, preferredCharityId, charityContributionPercent }
     : { name, phone: identifier, password, preferredCharityId, charityContributionPercent };
