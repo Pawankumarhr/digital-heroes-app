@@ -262,6 +262,60 @@ const buildQuery = (params: ListQueryParams = {}) => {
   return queryString ? `?${queryString}` : '';
 };
 
+const toPage = (value?: number) => {
+  const page = Number(value) || 1;
+  return page > 0 ? page : 1;
+};
+
+const toPageSize = (value?: number) => {
+  const pageSize = Number(value) || 20;
+  return pageSize > 0 ? Math.min(pageSize, 200) : 20;
+};
+
+const toPaginationMeta = (
+  params: ListQueryParams,
+  total: number,
+  defaultSortBy: string
+): PaginationMeta => {
+  const page = toPage(params.page);
+  const pageSize = toPageSize(params.pageSize);
+  const totalPages = Math.max(Math.ceil(total / pageSize), 1);
+
+  return {
+    page,
+    pageSize,
+    total,
+    totalPages,
+    search: params.search?.trim() || '',
+    sortBy: params.sortBy || defaultSortBy,
+    sortDir: params.sortDir === 'asc' ? 'asc' : 'desc',
+    filters: {
+      userId: params.userId || null,
+      status: params.status || null,
+      payoutStatus: params.payoutStatus || null,
+      verificationStatus: params.verificationStatus || null,
+      action: params.action || null,
+      entityType: params.entityType || null,
+    },
+  };
+};
+
+const tableQueryRange = (params: ListQueryParams) => {
+  const page = toPage(params.page);
+  const pageSize = toPageSize(params.pageSize);
+  const from = (page - 1) * pageSize;
+  const to = from + pageSize - 1;
+  return { from, to };
+};
+
+const toIsoMonth = (value?: string | null) => {
+  const date = new Date(value || '');
+  if (Number.isNaN(date.getTime())) {
+    return null;
+  }
+  return date.toISOString().slice(0, 7);
+};
+
 const requestBlob = async (path: string, init: RequestInit = {}, token?: string) => {
   const headers = new Headers(init.headers || {});
 
@@ -384,6 +438,15 @@ export const apiUserSignup = async (
 };
 
 export const apiForgotPassword = async (email: string, redirectPath = '/admin') => {
+  if (!isBackendConfigured) {
+    const redirectTo = `${window.location.origin}${redirectPath.startsWith('/') ? redirectPath : `/${redirectPath}`}`;
+    const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo });
+    if (error) {
+      throw new Error(error.message || 'Failed to send password reset email');
+    }
+    return { email };
+  }
+
   return request<ForgotPasswordData>('/api/auth/forgot-password', {
     method: 'POST',
     body: JSON.stringify({ email, redirectPath }),
@@ -398,6 +461,14 @@ export const apiSubmitContact = async (name: string, email: string, message: str
 };
 
 export const fetchPublicCharities = async () => {
+  if (!isBackendConfigured) {
+    const { data, error } = await supabase.from('charities').select('id, name, slug').order('name', { ascending: true });
+    if (error) {
+      throw new Error(error.message || 'Failed to fetch charities');
+    }
+    return (data || []) as PublicCharity[];
+  }
+
   const data = await request<{ items: PublicCharity[] }>('/api/charities/public');
   return data.items || [];
 };
@@ -480,6 +551,36 @@ export const fetchMe = async (token: string) => {
 };
 
 export const fetchScores = async (token: string, params: ListQueryParams = {}) => {
+  if (!isBackendConfigured) {
+    const { from, to } = tableQueryRange(params);
+    const sortBy = params.sortBy || 'score_date';
+    const ascending = params.sortDir === 'asc';
+
+    let query = supabase
+      .from('scores')
+      .select('id, user_id, score_value, score_date, created_at', { count: 'exact' })
+      .order(sortBy, { ascending })
+      .range(from, to);
+
+    if (params.search?.trim()) {
+      query = query.or(`user_id.ilike.%${params.search.trim()}%`);
+    }
+
+    if (params.userId) {
+      query = query.eq('user_id', params.userId);
+    }
+
+    const { data, error, count } = await query;
+    if (error) {
+      throw new Error(error.message || 'Failed to fetch scores');
+    }
+
+    return {
+      items: (data || []) as Array<{ id: string; user_id: string; score_value: number; score_date: string }>,
+      meta: toPaginationMeta(params, count || 0, 'score_date'),
+    };
+  }
+
   return request<PaginatedData<{ id: string; user_id: string; score_value: number; score_date: string }>>(
     `/api/scores${buildQuery(params)}`,
     {},
@@ -524,6 +625,36 @@ export const deleteScore = async (token: string, id: string) => {
 };
 
 export const fetchDraws = async (token: string, params: ListQueryParams = {}) => {
+  if (!isBackendConfigured) {
+    const { from, to } = tableQueryRange(params);
+    const sortBy = params.sortBy || 'draw_month';
+    const ascending = params.sortDir === 'asc';
+
+    let query = supabase
+      .from('draws')
+      .select('id, title, draw_month, status, created_at', { count: 'exact' })
+      .order(sortBy, { ascending })
+      .range(from, to);
+
+    if (params.search?.trim()) {
+      query = query.or(`title.ilike.%${params.search.trim()}%`);
+    }
+
+    if (params.status) {
+      query = query.eq('status', params.status);
+    }
+
+    const { data, error, count } = await query;
+    if (error) {
+      throw new Error(error.message || 'Failed to fetch draws');
+    }
+
+    return {
+      items: (data || []) as Array<{ id: string; title: string; draw_month: string; status: string }>,
+      meta: toPaginationMeta(params, count || 0, 'draw_month'),
+    };
+  }
+
   return request<PaginatedData<{ id: string; title: string; draw_month: string; status: string }>>(
     `/api/draws${buildQuery(params)}`,
     {},
@@ -606,6 +737,32 @@ export const closeDraw = async (token: string, id: string) => {
 };
 
 export const fetchCharities = async (token: string, params: ListQueryParams = {}) => {
+  if (!isBackendConfigured) {
+    const { from, to } = tableQueryRange(params);
+    const sortBy = params.sortBy || 'name';
+    const ascending = params.sortDir === 'asc';
+
+    let query = supabase
+      .from('charities')
+      .select('id, name, slug, created_at', { count: 'exact' })
+      .order(sortBy, { ascending })
+      .range(from, to);
+
+    if (params.search?.trim()) {
+      query = query.or(`name.ilike.%${params.search.trim()}%,slug.ilike.%${params.search.trim()}%`);
+    }
+
+    const { data, error, count } = await query;
+    if (error) {
+      throw new Error(error.message || 'Failed to fetch charities');
+    }
+
+    return {
+      items: (data || []) as Array<{ id: string; name: string; slug: string }>,
+      meta: toPaginationMeta(params, count || 0, 'name'),
+    };
+  }
+
   return request<PaginatedData<{ id: string; name: string; slug: string }>>(
     `/api/charities${buildQuery(params)}`,
     {},
@@ -650,6 +807,48 @@ export const deleteCharity = async (token: string, id: string) => {
 };
 
 export const fetchWinners = async (token: string, params: ListQueryParams = {}) => {
+  if (!isBackendConfigured) {
+    const { from, to } = tableQueryRange(params);
+    const sortBy = params.sortBy || 'created_at';
+    const ascending = params.sortDir === 'asc';
+
+    let query = supabase
+      .from('winners')
+      .select('id, user_id, draw_id, charity_id, payout_status, verification_status, prize_amount, created_at', { count: 'exact' })
+      .order(sortBy, { ascending })
+      .range(from, to);
+
+    if (params.payoutStatus) {
+      query = query.eq('payout_status', params.payoutStatus);
+    }
+
+    if (params.verificationStatus) {
+      query = query.eq('verification_status', params.verificationStatus);
+    }
+
+    if (params.search?.trim()) {
+      query = query.or(`user_id.ilike.%${params.search.trim()}%,draw_id.ilike.%${params.search.trim()}%,charity_id.ilike.%${params.search.trim()}%`);
+    }
+
+    const { data, error, count } = await query;
+    if (error) {
+      throw new Error(error.message || 'Failed to fetch winners');
+    }
+
+    return {
+      items: (data || []) as Array<{
+        id: string;
+        user_id: string;
+        draw_id: string;
+        charity_id: string;
+        payout_status: string;
+        prize_amount: number;
+        created_at: string;
+      }>,
+      meta: toPaginationMeta(params, count || 0, 'created_at'),
+    };
+  }
+
   return request<
     PaginatedData<{
       id: string;
@@ -675,6 +874,41 @@ export const fetchWinners = async (token: string, params: ListQueryParams = {}) 
 };
 
 export const fetchContactMessages = async (token: string, params: ListQueryParams = {}) => {
+  if (!isBackendConfigured) {
+    const { from, to } = tableQueryRange(params);
+    const sortBy = params.sortBy || 'submitted_at';
+    const ascending = params.sortDir === 'asc';
+
+    let query = supabase
+      .from('contact_messages')
+      .select('id, name, email, message, submitted_at, created_at', { count: 'exact' })
+      .order(sortBy, { ascending })
+      .range(from, to);
+
+    if (params.search?.trim()) {
+      query = query.or(
+        `name.ilike.%${params.search.trim()}%,email.ilike.%${params.search.trim()}%,message.ilike.%${params.search.trim()}%`
+      );
+    }
+
+    const { data, error, count } = await query;
+    if (error) {
+      throw new Error(error.message || 'Failed to fetch contact messages');
+    }
+
+    return {
+      items: (data || []) as Array<{
+        id: string;
+        name: string;
+        email: string;
+        message: string;
+        submitted_at?: string;
+        created_at?: string;
+      }>,
+      meta: toPaginationMeta(params, count || 0, 'submitted_at'),
+    };
+  }
+
   return request<
     PaginatedData<{
       id: string;
@@ -688,14 +922,150 @@ export const fetchContactMessages = async (token: string, params: ListQueryParam
 };
 
 export const fetchReportSummary = async (token: string) => {
+  if (!isBackendConfigured) {
+    const [scoresRes, drawsRes, charitiesRes, winnersRes, contactsRes] = await Promise.all([
+      supabase.from('scores').select('id, score_date', { count: 'exact' }),
+      supabase.from('draws').select('id', { count: 'exact', head: true }),
+      supabase.from('charities').select('id', { count: 'exact', head: true }),
+      supabase.from('winners').select('*', { count: 'exact' }),
+      supabase.from('contact_messages').select('id, submitted_at, created_at', { count: 'exact' }),
+    ]);
+
+    const mainError = [scoresRes, drawsRes, charitiesRes, winnersRes].find((r) => r.error)?.error;
+    if (mainError) {
+      throw new Error(mainError.message || 'Failed to build reports');
+    }
+
+    const contactsData = contactsRes.error ? [] : contactsRes.data || [];
+    const winnersData = winnersRes.data || [];
+
+    const monthlyMap = new Map<
+      string,
+      { month: string; scores: number; winners: number; contacts: number; total_prize: number }
+    >();
+
+    const ensureMonth = (month: string) => {
+      if (!monthlyMap.has(month)) {
+        monthlyMap.set(month, { month, scores: 0, winners: 0, contacts: 0, total_prize: 0 });
+      }
+      return monthlyMap.get(month)!;
+    };
+
+    for (const score of scoresRes.data || []) {
+      const month = toIsoMonth((score as { score_date?: string }).score_date);
+      if (!month) continue;
+      ensureMonth(month).scores += 1;
+    }
+
+    for (const winner of winnersData) {
+      const row = winner as Record<string, unknown>;
+      const month =
+        toIsoMonth((row.created_at as string | undefined) || (row.updated_at as string | undefined)) ||
+        toIsoMonth(row.draw_month as string | undefined);
+      if (!month) continue;
+
+      const prize = Number(row.prize_amount || row.amount || row.prize || row.prize_value) || 0;
+      const payoutCents = Number(row.payout_amount_cents) || 0;
+      const totalPrize = prize || payoutCents / 100;
+
+      const bucket = ensureMonth(month);
+      bucket.winners += 1;
+      bucket.total_prize += totalPrize;
+    }
+
+    for (const contact of contactsData) {
+      const row = contact as Record<string, unknown>;
+      const month = toIsoMonth((row.submitted_at as string | undefined) || (row.created_at as string | undefined));
+      if (!month) continue;
+      ensureMonth(month).contacts += 1;
+    }
+
+    const paidWinners = winnersData.filter(
+      (row) => String((row as Record<string, unknown>).payout_status || (row as Record<string, unknown>).status || '') === 'paid'
+    ).length;
+
+    const totalPrize = winnersData.reduce((sum, row) => {
+      const data = row as Record<string, unknown>;
+      const prize = Number(data.prize_amount || data.amount || data.prize || data.prize_value) || 0;
+      const payoutCents = Number(data.payout_amount_cents) || 0;
+      return sum + (prize || payoutCents / 100);
+    }, 0);
+
+    return {
+      totals: {
+        scores: scoresRes.count || 0,
+        draws: drawsRes.count || 0,
+        charities: charitiesRes.count || 0,
+        winners: winnersRes.count || 0,
+        contacts: contactsRes.count || 0,
+        paidWinners,
+        pendingWinners: Math.max((winnersRes.count || 0) - paidWinners, 0),
+        totalPrize,
+      },
+      monthly: Array.from(monthlyMap.values()).sort((a, b) => (a.month < b.month ? 1 : -1)),
+    };
+  }
+
   return request<ReportSummary>('/api/reports/summary', {}, token);
 };
 
 export const exportReportCsv = async (token: string) => {
+  if (!isBackendConfigured) {
+    const report = await fetchReportSummary(token);
+    const header = 'month,scores,winners,contacts,total_prize';
+    const rows = report.monthly.map((row) => {
+      return [row.month, row.scores, row.winners, row.contacts, Number(row.total_prize || 0).toFixed(2)].join(',');
+    });
+    const csv = [header, ...rows].join('\n');
+    return new Blob([csv], { type: 'text/csv;charset=utf-8' });
+  }
+
   return requestBlob('/api/reports/export.csv', {}, token);
 };
 
 export const fetchAuditLogs = async (token: string, params: ListQueryParams = {}) => {
+  if (!isBackendConfigured) {
+    const { from, to } = tableQueryRange(params);
+    const sortBy = params.sortBy || 'created_at';
+    const ascending = params.sortDir === 'asc';
+
+    let query = supabase
+      .from('audit_logs')
+      .select('*', { count: 'exact' })
+      .order(sortBy, { ascending })
+      .range(from, to);
+
+    if (params.search?.trim()) {
+      query = query.or(
+        `actor_email.ilike.%${params.search.trim()}%,entity_type.ilike.%${params.search.trim()}%,action.ilike.%${params.search.trim()}%`
+      );
+    }
+
+    if (params.action) {
+      query = query.eq('action', params.action.trim().toLowerCase());
+    }
+
+    if (params.entityType) {
+      query = query.eq('entity_type', params.entityType.trim().toLowerCase());
+    }
+
+    const { data, error, count } = await query;
+    if (error) {
+      throw new Error(error.message || 'Failed to fetch audit logs');
+    }
+
+    return {
+      items: (data || []) as AuditLog[],
+      meta: {
+        ...toPaginationMeta(params, count || 0, 'created_at'),
+        filters: {
+          action: params.action?.trim() || null,
+          entityType: params.entityType?.trim() || null,
+        },
+      },
+    };
+  }
+
   return request<PaginatedData<AuditLog>>(`/api/audit-logs${buildQuery(params)}`, {}, token);
 };
 
@@ -819,6 +1189,19 @@ export const fetchCharityContributions = async (token: string, params: ListQuery
 };
 
 export const fetchAdminUsers = async (token: string) => {
+  if (!isBackendConfigured) {
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('id, full_name, email, role, is_active, subscription_status, subscription_plan, subscription_ends_at')
+      .order('updated_at', { ascending: false });
+
+    if (error) {
+      throw new Error(error.message || 'Failed to fetch users');
+    }
+
+    return { items: (data || []) as AdminUser[] };
+  }
+
   return request<{ items: AdminUser[] }>('/api/admin/users', {}, token);
 };
 
