@@ -5,6 +5,17 @@ type ApiEnvelope<T> = {
   errors?: unknown;
 };
 
+const viteEnv = (import.meta as unknown as { env?: Record<string, string | undefined> }).env;
+const apiBaseUrl = (viteEnv?.VITE_API_BASE_URL || '').replace(/\/+$/, '');
+
+const buildRequestUrl = (path: string) => {
+  if (/^https?:\/\//i.test(path)) {
+    return path;
+  }
+
+  return apiBaseUrl ? `${apiBaseUrl}${path}` : path;
+};
+
 type PaginationMeta = {
   page: number;
   pageSize: number;
@@ -186,7 +197,7 @@ const request = async <T>(path: string, init: RequestInit = {}, token?: string):
     headers.set('Authorization', `Bearer ${token}`);
   }
 
-  const response = await fetch(path, {
+  const response = await fetch(buildRequestUrl(path), {
     ...init,
     headers,
   });
@@ -225,7 +236,7 @@ const requestBlob = async (path: string, init: RequestInit = {}, token?: string)
     headers.set('Authorization', `Bearer ${token}`);
   }
 
-  const response = await fetch(path, {
+  const response = await fetch(buildRequestUrl(path), {
     ...init,
     headers,
   });

@@ -13,7 +13,15 @@ const { notFoundHandler, errorHandler } = require('./middleware/errorMiddleware'
 const app = express();
 
 app.use(helmet());
-const allowedOrigins = [env.clientUrl, 'http://localhost:5173', 'http://localhost:5174'];
+const allowedOrigins = new Set(
+  [
+    env.clientUrl,
+    ...(env.corsAllowedOrigins || '')
+      .split(',')
+      .map((origin) => origin.trim())
+      .filter(Boolean),
+  ].filter(Boolean)
+);
 
 const isAllowedLocalOrigin = (origin) => {
   try {
@@ -24,10 +32,28 @@ const isAllowedLocalOrigin = (origin) => {
   }
 };
 
+const isAllowedVercelPreviewOrigin = (origin) => {
+  if (!env.allowVercelPreviewOrigins) {
+    return false;
+  }
+
+  try {
+    const parsed = new URL(origin);
+    return parsed.hostname.endsWith('.vercel.app');
+  } catch {
+    return false;
+  }
+};
+
 app.use(
   cors({
     origin: (origin, callback) => {
-      if (!origin || allowedOrigins.includes(origin) || isAllowedLocalOrigin(origin)) {
+      if (
+        !origin ||
+        allowedOrigins.has(origin) ||
+        isAllowedLocalOrigin(origin) ||
+        isAllowedVercelPreviewOrigin(origin)
+      ) {
         callback(null, true);
         return;
       }
